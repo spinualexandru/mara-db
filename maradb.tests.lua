@@ -363,5 +363,138 @@ local function run_tests()
     return failed == 0
 end
 
+local function setup_love_mock()
+    -- Create LÖVE mock
+    _G.love = {
+        filesystem = {
+            files = {},
+            getInfo = function(filename)
+                return _G.love.filesystem.files[filename] ~= nil
+            end,
+            read = function(filename)
+                return _G.love.filesystem.files[filename]
+            end,
+            write = function(filename, content)
+                _G.love.filesystem.files[filename] = content
+                return true
+            end
+        }
+    }
+
+    -- Reload maradb to reset runtime detection
+    package.loaded.maradb = nil
+    return require('maradb')
+end
+
+-- Remove LÖVE mock
+local function teardown_love_mock()
+    _G.love = nil
+    package.loaded.maradb = nil
+    return require('maradb')
+end
+
+-- Test LÖVE2D file operations
+local function test_love2d_file_operations()
+    local maradb = setup_love_mock()
+
+    -- Test writing
+    local write_success = maradb:write_file("test_love_file.txt", "Hello LÖVE2D")
+    assert_true(write_success, "Should write file successfully in LÖVE2D")
+    assert_equals("Hello LÖVE2D", _G.love.filesystem.files["test_love_file.txt"],
+            "File content should be stored correctly")
+
+    -- Test reading
+    local content = maradb:read_file("test_love_file.txt")
+    assert_equals("Hello LÖVE2D", content, "Should read correct content in LÖVE2D")
+
+    -- Test reading non-existent file
+    local missing_content = maradb:read_file("non_existent_file.txt")
+    assert_true(missing_content == nil, "Should return nil for non-existent file in LÖVE2D")
+
+    teardown_love_mock()
+end
+
+-- Test database operations in LÖVE2D
+local function test_love2d_database_operations()
+    local maradb = setup_love_mock()
+
+    -- Create database and add data
+    local db = maradb.open("love2d_test_db")
+    local users = db:collection("users")
+    users:insert({ name = "LÖVE User", email = "love@example.com" })
+
+    -- Verify data
+    assert_equals(1, #users.data, "Collection should have one document")
+    assert_equals("LÖVE User", users.data[1].name, "Document should have correct name")
+
+    -- Save and close
+    local result = db:close()
+    assert_true(result, "Database should close successfully in LÖVE2D")
+
+    -- Verify file was created
+    assert_true(_G.love.filesystem.files["love2d_test_db.db"] ~= nil,
+            "Database file should exist in LÖVE2D filesystem")
+
+    -- Test persistence
+    local db2 = maradb.open("love2d_test_db")
+    local users2 = db2:collection("users")
+    assert_equals(1, #users2.data, "Data should persist in LÖVE2D environment")
+
+    teardown_love_mock()
+end
+
+-- Test environment detection
+local function test_environment_detection()
+    -- Test vanilla Lua detection
+    local vanilla_maradb = require('maradb')
+    assert_true(not vanilla_maradb.runtime.is_love, "Should detect vanilla Lua environment")
+
+    -- Test LÖVE2D detection
+    local love_maradb = setup_love_mock()
+    assert_true(love_maradb.runtime.is_love, "Should detect LÖVE2D environment")
+
+    teardown_love_mock()
+end
+
+-- Update run_tests function to include new tests
+local function run_tests()
+    print("=== Running MaraDB Tests ===")
+
+    local tests = {
+        test_opening_database,
+        test_collections,
+        test_insert,
+        test_queries,
+        test_updates,
+        test_upsert,
+        test_delete,
+        test_indexing,
+        test_nested_data,
+        test_complete_example,
+        -- LÖVE2D specific tests
+        test_environment_detection,
+        test_love2d_file_operations,
+        test_love2d_database_operations
+    }
+
+    local passed = 0
+    local failed = 0
+
+    for i, test in ipairs(tests) do
+        io.write("Running test #" .. i .. "... ")
+        local success, err = pcall(test)
+        if success then
+            print("PASSED")
+            passed = passed + 1
+        else
+            print("FAILED: " .. err)
+            failed = failed + 1
+        end
+    end
+
+    print("\nResults: " .. passed .. " passed, " .. failed .. " failed")
+    return failed == 0
+end
+
 -- Execute all tests
 return run_tests()
