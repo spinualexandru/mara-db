@@ -1,0 +1,4 @@
+*.db
+.idea
+.env
+main.lua
