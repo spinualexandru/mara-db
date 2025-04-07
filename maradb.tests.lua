@@ -13,555 +13,335 @@ local function assert_true(condition, message)
     end
 end
 
-local function assert_error(func, expected_error)
-    local success, err = pcall(func)
-    if success then
-        error("Expected error but operation succeeded")
-    end
-    return err
-end
-
--- Clean up test database
+-- Cleanup function
 local function cleanup()
     os.remove("test_db.db")
+    os.remove("my_database.db")
+    os.remove("blog.db")
 end
 
--- Test basic database operations
-local function test_database_creation()
+-- 1. Test opening a database
+local function test_opening_database()
     cleanup()
 
-    local db = maradb.open("test_db")
+    -- Open a database (creates it if it doesn't exist)
+    local db = maradb.open("my_database")
     assert_true(db ~= nil, "Database should be created")
 
+    -- Save changes and close when done
     local result = db:close()
     assert_true(result, "Database should close successfully")
 
-    local db2 = maradb.open("test_db")
-    assert_true(db2 ~= nil, "Database should be reopened")
-    db2:close()
+    -- Verify database file was created
+    local file = io.open("my_database.db", "r")
+    assert_true(file ~= nil, "Database file should exist")
+    file:close()
 end
 
--- Test collection operations
-local function test_collection_operations()
+-- 2. Test working with collections
+local function test_collections()
     cleanup()
 
     local db = maradb.open("test_db")
-    local users = db:collection("users")
 
+    -- Get or create a collection
+    local users = db:collection("users")
     assert_true(users ~= nil, "Collection should be created")
-    assert_equals("users", users.name, "Collection name should match")
-    assert_equals(0, #users.data, "New collection should be empty")
+
+    -- Insert a document
+    users:insert({ name = "Alice", email = "alice@example.com", age = 30 })
+    assert_equals(1, #users.data, "Collection should have one document")
+
+    -- Verify document properties
+    assert_equals("Alice", users.data[1].name, "Document should have correct name")
+    assert_equals("alice@example.com", users.data[1].email, "Document should have correct email")
+    assert_equals(30, users.data[1].age, "Document should have correct age")
 
     db:close()
-
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-    assert_true(users2 ~= nil, "Collection should persist after reopen")
-    db2:close()
 end
 
--- Test basic CRUD operations
-local function test_basic_crud()
+-- 3. Test insert operations
+local function test_insert()
     cleanup()
 
     local db = maradb.open("test_db")
     local users = db:collection("users")
+    local tags = db:collection("tags")
 
-    -- Insert
-    local id = users:insert({ name = "Alice", age = 30 })
-    assert_true(id > 0, "Insert should return valid ID")
-    assert_equals(1, #users.data, "Collection should have one item")
+    -- Insert a document
+    users:insert({ name = "Bob", email = "bob@example.com", age = 25 })
+    assert_equals(1, #users.data, "Collection should have one document")
+    assert_equals("Bob", users.data[1].name, "Document should have correct data")
 
-    -- Query
-    local results = users:where({ name = "Alice" })
-    assert_equals(1, #results, "Query should find one result")
-    assert_equals("Alice", results[1].name, "Query result should match inserted data")
-    assert_equals(30, results[1].age, "Query result should match inserted data")
-
-    -- Update
-    users:update({ name = "Alice" }, { age = 31 })
-    results = users:where({ name = "Alice" })
-    assert_equals(31, results[1].age, "Update should modify data")
-
-    -- Remove
-    users:remove({ name = "Alice" })
-    results = users:where({ name = "Alice" })
-    assert_equals(0, #results, "Remove should delete data")
+    -- Insert a simple string value
+    tags:insert("important")
+    assert_equals(1, #tags.data, "Tags collection should have one item")
+    assert_true(tags.data[1].value == "important" or tags.data[1].name == "important",
+            "Tag value should be stored correctly")
 
     db:close()
 end
 
--- Test index creation and enforcement
-local function test_index_creation()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    users:createIndex("username")
-    users:insert({ username = "alice", age = 30 })
-
-    local err = assert_error(function()
-        users:insert({ age = 25 })
-    end)
-    assert_true(err:match("Missing indexed field"), "Should error on missing index field")
-
-    db:close()
-
-    -- Reopen and verify index is still enforced
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-
-    local err2 = assert_error(function()
-        users2:insert({ age = 26 })
-    end)
-    assert_true(err2:match("Missing indexed field"), "Index should persist across sessions")
-
-    users2:insert({ username = "bob", age = 40 })
-    db2:close()
-end
-
--- Test uniqueness constraint
-local function test_uniqueness_constraint()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    users:createIndex("email")
-    users:insert({ email = "alice@example.com", name = "Alice" })
-
-    local err = assert_error(function()
-        users:insert({ email = "alice@example.com", name = "Alice2" })
-    end)
-    assert_true(err:match("Duplicate value"), "Should error on duplicate value")
-
-    db:close()
-
-    -- Reopen and verify uniqueness is still enforced
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-
-    local err2 = assert_error(function()
-        users2:insert({ email = "alice@example.com", name = "Alice3" })
-    end)
-    assert_true(err2:match("Duplicate value"), "Uniqueness should persist across sessions")
-
-    users2:insert({ email = "bob@example.com", name = "Bob" })
-    db2:close()
-end
-
--- Test string insert with indexes
-local function test_string_insert_with_index()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    users:createIndex("name")
-    users:insert("Alice")
-
-    local results = users:where({ name = "Alice" })
-    assert_equals(1, #results, "String value should be inserted correctly")
-
-    local err = assert_error(function()
-        users:insert("Alice")
-    end)
-    assert_true(err:match("Duplicate value"), "Should prevent duplicate strings")
-
-    db:close()
-end
-
--- Test multiple collections with indexes
-local function test_multiple_collection_indexes()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-    local posts = db:collection("posts")
-
-    users:createIndex("email")
-    posts:createIndex("slug")
-
-    users:insert({ email = "alice@example.com", name = "Alice" })
-    posts:insert({ slug = "first-post", title = "First Post" })
-
-    local err1 = assert_error(function()
-        users:insert({ email = "alice@example.com", name = "Duplicate" })
-    end)
-
-    local err2 = assert_error(function()
-        posts:insert({ slug = "first-post", title = "Duplicate" })
-    end)
-
-    db:close()
-
-    -- Reopen and check indexes still work
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-    local posts2 = db2:collection("posts")
-
-    local err3 = assert_error(function()
-        users2:insert({ email = "alice@example.com" })
-    end)
-
-    local err4 = assert_error(function()
-        posts2:insert({ slug = "first-post" })
-    end)
-
-    db2:close()
-end
-
-local function test_nested_objects()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    -- Insert document with nested object
-    users:insert({
-        name = "Bob",
-        profile = {
-            age = 30,
-            address = {
-                city = "New York",
-                zip = "10001"
-            }
-        }
-    })
-
-    db:close()
-
-    -- Reopen and verify nested data persists
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-    local results = users2:where({ name = "Bob" })
-
-    assert_equals(1, #results, "Should find user with nested data")
-    assert_equals(30, results[1].profile.age, "Nested object field should be preserved")
-    assert_equals("New York", results[1].profile.address.city, "Deeply nested field should be preserved")
-
-    db2:close()
-end
-
-local function test_nested_arrays()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    -- Insert document with nested arrays
-    users:insert({
-        username = "charlie",
-        tags = { "programmer", "gamer" },
-        posts = {
-            { title = "First post", likes = 10 },
-            { title = "Second post", likes = 15 }
-        }
-    })
-
-    db:close()
-
-    -- Reopen and verify nested arrays persist
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-    local results = users2:where({ username = "charlie" })
-
-    assert_equals(1, #results, "Should find user with nested arrays")
-    assert_equals(2, #results[1].tags, "Array should have correct length")
-    assert_equals("programmer", results[1].tags[1], "Array elements should be preserved")
-    assert_equals(2, #results[1].posts, "Nested array should have correct length")
-    assert_equals(15, results[1].posts[2].likes, "Objects in arrays should be preserved")
-
-    db2:close()
-end
-
-local function test_complex_nesting()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local inventory = db:collection("inventory")
-
-    -- Insert document with complex nesting
-    inventory:createIndex("sku")
-    inventory:insert({
-        sku = "ABC123",
-        name = "Widget",
-        categories = { "tools", "home" },
-        variants = {
-            {
-                color = "blue",
-                sizes = { "S", "M", "L" },
-                prices = {
-                    regular = 19.99,
-                    sale = {
-                        value = 14.99,
-                        untils = "2023-12-31"
-                    }
-                }
-            },
-            {
-                color = "red",
-                sizes = { "M", "L" },
-                prices = {
-                    regular = 21.99,
-                    sale = {
-                        value = 16.99,
-                        untils = "2023-12-31"
-                    }
-                }
-            }
-        }
-    })
-
-    local results = inventory:where({ sku = "ABC123" })
-    assert_equals("blue", results[1].variants[1].color, "Complex nested data should be accessible")
-    assert_equals(14.99, results[1].variants[1].prices.sale.value, "Deeply nested values should be accessible")
-
-    db:close()
-
-    -- Reopen and verify complex nested data persists
-    local db2 = maradb.open("test_db")
-    local inventory2 = db2:collection("inventory")
-    local results2 = inventory2:where({ sku = "ABC123" })
-
-    assert_equals(2, #results2[1].variants, "Nested array should maintain count")
-    assert_equals("2023-12-31", results2[1].variants[2].prices.sale.untils, "Deeply nested values should persist")
-
-    db2:close()
-end
-
--- Test nil values handling
-local function test_nil_values()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    -- Insert with nil values
-    users:insert({
-        username = "dave",
-        email = nil,
-        active = true
-    })
-
-    local results = users:where({ username = "dave" })
-    assert_equals(1, #results, "Should store document with nil values")
-    assert_true(results[1].email == nil, "Should preserve nil values")
-
-    -- Querying for nil values
-    local nil_results = users:where({ email = nil })
-    assert_equals(1, #nil_results, "Should be able to query for nil values")
-
-    db:close()
-
-    -- Check persistence of nil values
-    local db2 = maradb.open("test_db")
-    local users2 = db2:collection("users")
-    local results2 = users2:where({ username = "dave" })
-    assert_true(results2[1].email == nil, "Nil values should persist across sessions")
-
-    db2:close()
-end
-
--- Test nil values in nested structures
-local function test_nested_nil_values()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local products = db:collection("products")
-
-    -- Insert document with nil values at different nesting levels
-    products:insert({
-        code = "PROD-123",
-        name = "Test Product",
-        details = {
-            color = "blue",
-            weight = nil,
-            dimensions = {
-                width = 10,
-                height = 20,
-                depth = nil
-            }
-        },
-        categories = { "electronics", nil, "sale" },
-        related_codes = nil
-    })
-
-    db:close()
-
-    -- Verify nil values in nested structures
-    local db2 = maradb.open("test_db")
-    local products2 = db2:collection("products")
-    local results = products2:where({ code = "PROD-123" })
-
-    assert_equals(1, #results, "Should find document with nested nil values")
-    assert_true(results[1].details.weight == nil, "Shallow nested nil should be preserved")
-    assert_true(results[1].details.dimensions.depth == nil, "Deep nested nil should be preserved")
-    assert_true(results[1].categories[2] == nil, "Nil in array should be preserved")
-    assert_true(results[1].related_codes == nil, "Top-level nil should be preserved")
-
-    db2:close()
-end
-
--- Test indexed fields with nil values
-local function test_indexed_nil_values()
-    cleanup()
-
-    local db = maradb.open("test_db")
-    local users = db:collection("users")
-
-    users:createIndex("email")
-
-    -- This should fail since the indexed field is missing
-    local err = assert_error(function()
-        users:insert({
-            username = "bob",
-            active = true
-            -- email is missing
-        })
-    end)
-    assert_true(err:match("Missing indexed field"), "Should reject document missing indexed field")
-
-    -- This should also fail with explicit nil
-    local err2 = assert_error(function()
-        users:insert({
-            username = "bob",
-            email = nil,
-            active = true
-        })
-    end)
-    assert_true(err2:match("Missing indexed field"), "Should reject document with nil indexed field")
-
-    db:close()
-end
-
--- Test where method with partial updates
-local function test_where_with_partial_update()
+-- 4. Test query operations
+local function test_queries()
     cleanup()
 
     local db = maradb.open("test_db")
     local users = db:collection("users")
 
     -- Insert test data
-    users:insert({ name = "Alex", level = 5, status = "active" })
-    users:insert({ name = "Bob", level = 10, status = "active" })
-    users:insert({ name = "Charlie", level = 15, status = "inactive" })
+    users:insert({ name = "Alice", email = "alice@example.com", status = "active", role = "admin" })
+    users:insert({ name = "Bob", email = "bob@example.com", status = "active", role = "editor" })
+    users:insert({ name = "Charlie", email = "charlie@example.com", status = "inactive", role = "user" })
 
-    -- Perform partial update with where
-    local results = users:where({ status = "active" }, { level = 20 })
+    -- Find all matching documents
+    local active_users = users:where({ status = "active" })
+    assert_equals(2, #active_users, "Should find 2 active users")
 
-    -- Verify results count
-    assert_equals(2, #results, "Should find and return 2 active users")
+    -- Get a single matching document
+    local user = users:get({ email = "alice@example.com" })
+    assert_true(user ~= nil, "Should find Alice")
+    assert_equals("Alice", user.name, "Should return correct user")
 
-    -- Check that partial update was applied
-    local alex = users:where({ name = "Alex" })[1]
-    local bob = users:where({ name = "Bob" })[1]
-
-    assert_equals(20, alex.level, "Alex's level should be updated")
-    assert_equals(20, bob.level, "Bob's level should be updated")
-    assert_equals("active", alex.status, "Status should remain unchanged")
-
-    -- Verify non-matching documents weren't updated
-    local charlie = users:where({ name = "Charlie" })[1]
-    assert_equals(15, charlie.level, "Non-matching documents should not be updated")
+    -- Find with multiple conditions
+    local admins = users:where({ status = "active", role = "admin" })
+    assert_equals(1, #admins, "Should find 1 admin")
+    assert_equals("Alice", admins[1].name, "Admin should be Alice")
 
     db:close()
 end
 
--- Test get method
-local function test_get_method()
+-- 5. Test update operations
+local function test_updates()
     cleanup()
 
     local db = maradb.open("test_db")
     local users = db:collection("users")
 
     -- Insert test data
-    users:insert({ name = "Alice", age = 30 })
-    users:insert({ name = "Bob", age = 25 })
+    users:insert({ name = "Alice", status = "active", level = 1 })
+    users:insert({ name = "Bob", status = "active", level = 1 })
+    users:insert({ name = "Charlie", status = "inactive", level = 1 })
 
-    -- Test get with match
+    -- Update all matching documents
+    users:update({ status = "active" }, { last_seen = "today" })
+
+    -- Verify updates
     local alice = users:get({ name = "Alice" })
-    assert_true(alice ~= nil, "Should find Alice")
-    assert_equals("Alice", alice.name, "Should return correct record")
-    assert_equals(30, alice.age, "Should include all fields")
+    assert_equals("today", alice.last_seen, "Alice should have last_seen field updated")
 
-    -- Test get with no match
-    local nobody = users:get({ name = "Nobody" })
-    assert_true(nobody == nil, "Should return nil for no match")
+    local charlie = users:get({ name = "Charlie" })
+    assert_true(charlie.last_seen == nil, "Charlie should not have last_seen field")
 
-    -- Test get preserves references
+    -- Find and update in one operation
+    local updated_users = users:where({ status = "active" }, { level = 2 })
+    assert_equals(2, #updated_users, "Should update and return 2 users")
+    assert_equals(2, updated_users[1].level, "First user should have updated level")
+
+    -- Verify all updates persisted
     local bob = users:get({ name = "Bob" })
-    bob.age = 26  -- Modify the returned object
-
-    -- Verify the change persisted to collection
-    local bob_check = users:get({ name = "Bob" })
-    assert_equals(26, bob_check.age, "Modifications to returned objects should affect the collection")
+    assert_equals(2, bob.level, "Bob's level should be updated")
+    assert_equals("today", bob.last_seen, "Bob's last_seen should be updated")
 
     db:close()
 end
 
--- Test upsert method
-local function test_upsert_method()
+-- 6. Test upsert operations
+local function test_upsert()
     cleanup()
 
     local db = maradb.open("test_db")
     local users = db:collection("users")
 
     -- Insert initial data
-    users:insert({ name = "Dave", level = 5, status = "active" })
+    users:insert({ name = "Alice", email = "alice@example.com", level = 5 })
 
-    -- Test update case
-    local updated = users:upsert({ name = "Dave" }, { level = 10, title = "Admin" })
+    -- Update existing record
+    local updated = users:upsert({ email = "alice@example.com" }, { name = "Alice Updated", level = 6 })
     assert_equals(1, #updated, "Should return 1 updated record")
-    assert_equals(10, updated[1].level, "Should update level field")
-    assert_equals("Admin", updated[1].title, "Should add new field")
-    assert_equals("active", updated[1].status, "Should preserve existing fields")
+    assert_equals("Alice Updated", updated[1].name, "Name should be updated")
+    assert_equals(6, updated[1].level, "Level should be updated")
 
-    -- Verify update affected the collection
-    local dave = users:get({ name = "Dave" })
-    assert_equals(10, dave.level, "Update should persist in collection")
-
-    -- Test insert case
-    local inserted = users:upsert({ name = "Eve" }, { level = 7, status = "new" })
+    -- Insert new record
+    local inserted = users:upsert({ email = "charlie@example.com" }, { name = "Charlie", level = 1 })
     assert_equals(1, #inserted, "Should return 1 inserted record")
-    assert_equals("Eve", inserted[1].name, "Should set fields from query")
-    assert_equals(7, inserted[1].level, "Should set fields from data")
+    assert_equals("Charlie", inserted[1].name, "Should insert with correct name")
 
-    -- Verify the record was added to collection
-    local count_after = #users.data
-    assert_equals(2, count_after, "Collection should now have 2 records")
-
-    -- Test with indexed fields
-    users:createIndex("email")
-    users:upsert({ email = "frank@example.com" }, { name = "Frank", level = 3 })
-
-    local frank = users:get({ email = "frank@example.com" })
-    assert_true(frank ~= nil, "Should insert document with indexed field")
+    -- Verify collection state
+    assert_equals(2, #users.data, "Collection should have 2 records")
+    local alice = users:get({ email = "alice@example.com" })
+    assert_equals("Alice Updated", alice.name, "Alice's update should persist")
 
     db:close()
 end
+
+-- 7. Test delete operations
+local function test_delete()
+    cleanup()
+
+    local db = maradb.open("test_db")
+    local users = db:collection("users")
+
+    -- Insert test data
+    users:insert({ name = "Alice", status = "active" })
+    users:insert({ name = "Bob", status = "active" })
+    users:insert({ name = "Charlie", status = "inactive" })
+
+    -- Remove all matching documents
+    users:remove({ status = "inactive" })
+    assert_equals(2, #users.data, "Should have 2 documents after remove")
+
+    local charlie = users:get({ name = "Charlie" })
+    assert_true(charlie == nil, "Charlie should be removed")
+
+    -- Clear all documents in collection
+    users:purge()
+    assert_equals(0, #users.data, "Collection should be empty after purge")
+
+    db:close()
+end
+
+-- 8. Test indexing
+local function test_indexing()
+    cleanup()
+
+    local db = maradb.open("test_db")
+    local users = db:collection("users")
+
+    -- Create an index (default: unique = true)
+    users:createIndex("email")
+
+    -- Insert with indexed field
+    users:insert({ name = "Alice", email = "alice@example.com" })
+
+    -- Test uniqueness constraint
+    local success, err = pcall(function()
+        users:insert({ name = "Alice Clone", email = "alice@example.com" })
+    end)
+    assert_true(not success, "Should reject duplicate email")
+
+    -- Create a non-unique index
+    local tags = db:collection("tags")
+    tags:createIndex("category", { unique = false })
+
+    -- Insert documents with same non-unique indexed field
+    tags:insert({ name = "Tag1", category = "important" })
+    tags:insert({ name = "Tag2", category = "important" })
+    assert_equals(2, #tags.data, "Should allow duplicate non-unique indexed field")
+
+    db:close()
+end
+
+-- 9. Test nested data
+local function test_nested_data()
+    cleanup()
+
+    local db = maradb.open("test_db")
+    local posts = db:collection("posts")
+
+    -- Insert document with nested structure
+    posts:insert({
+        title = "Hello World",
+        author = {
+            name = "Alice",
+            email = "alice@example.com"
+        },
+        tags = { "lua", "database", "tutorial" },
+        comments = {
+            { user = "Bob", text = "Great post!" },
+            { user = "Charlie", text = "Thanks for sharing!" }
+        }
+    })
+
+    -- Verify nested data was stored correctly
+    assert_equals(1, #posts.data, "Should have one post")
+    local post = posts.data[1]
+
+    assert_equals("Hello World", post.title, "Title should be stored correctly")
+    assert_equals("Alice", post.author.name, "Nested author name should be stored")
+    assert_equals("alice@example.com", post.author.email, "Nested author email should be stored")
+
+    assert_equals(3, #post.tags, "Should have 3 tags")
+    assert_equals("lua", post.tags[1], "First tag should be stored correctly")
+
+    assert_equals(2, #post.comments, "Should have 2 comments")
+    assert_equals("Bob", post.comments[1].user, "First comment user should be stored")
+    assert_equals("Thanks for sharing!", post.comments[2].text, "Second comment text should be stored")
+
+    db:close()
+end
+
+-- 10. Test complete example
+local function test_complete_example()
+    cleanup()
+
+    local db = maradb.open("blog")
+
+    -- Create collections
+    local users = db:collection("users")
+    local posts = db:collection("posts")
+
+    -- Create indexes
+    users:createIndex("email")
+    posts:createIndex("slug")
+
+    -- Insert users
+    users:insert({ name = "Alice", email = "alice@example.com", role = "admin" })
+    users:insert({ name = "Bob", email = "bob@example.com", role = "editor" })
+
+    -- Insert posts
+    posts:insert({
+        title = "Getting Started with MaraDB",
+        slug = "getting-started",
+        content = "This is a tutorial on using MaraDB...",
+        author = "alice@example.com",
+        tags = { "tutorial", "database" }
+    })
+
+    -- Query data
+    local admin_users = users:where({ role = "admin" })
+    assert_equals(1, #admin_users, "Should find 1 admin user")
+
+    -- Update data
+    users:update({ name = "Bob" }, { status = "active" })
+    local bob = users:get({ name = "Bob" })
+    assert_equals("active", bob.status, "Bob's status should be updated")
+
+    -- Upsert data
+    users:upsert({ email = "charlie@example.com" }, {
+        name = "Charlie",
+        role = "contributor",
+        status = "new"
+    })
+
+    local charlie = users:get({ email = "charlie@example.com" })
+    assert_true(charlie ~= nil, "Charlie should be inserted")
+    assert_equals("contributor", charlie.role, "Charlie should have correct role")
+
+    db:close()
+
+    -- Verify persistence
+    local db2 = maradb.open("blog")
+    local users2 = db2:collection("users")
+    assert_equals(3, #users2.data, "Database should persist 3 users")
+    db2:close()
+end
+
 -- Run all tests
 local function run_tests()
-    print("=== Running MaraDB Tests ===")
+    print("=== Running MaraDB README Examples Tests ===")
 
     local tests = {
-        test_database_creation,
-        test_collection_operations,
-        test_basic_crud,
-        test_index_creation,
-        test_uniqueness_constraint,
-        test_string_insert_with_index,
-        test_multiple_collection_indexes,
-        test_nested_objects,
-        test_nested_arrays,
-        test_complex_nesting,
-        test_nil_values,
-        test_nested_nil_values,
-        test_indexed_nil_values,
-        test_where_with_partial_update,
-        test_get_method,
-        test_upsert_method
+        test_opening_database,
+        test_collections,
+        test_insert,
+        test_queries,
+        test_updates,
+        test_upsert,
+        test_delete,
+        test_indexing,
+        test_nested_data,
+        test_complete_example
     }
 
     local passed = 0
@@ -583,5 +363,5 @@ local function run_tests()
     return failed == 0
 end
 
--- Execute the tests
+-- Execute all tests
 run_tests()

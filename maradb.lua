@@ -349,7 +349,6 @@ function maradb:collection(collection_name, db)
         return #self.data
     end
 
-    -- Other collection methods remain the same
     function collection:find(query)
         local results = {}
         for _, item in ipairs(self.data) do
