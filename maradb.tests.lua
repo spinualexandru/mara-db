@@ -364,4 +364,4 @@ local function run_tests()
 end
 
 -- Execute all tests
-run_tests()
+return run_tests()
