@@ -1,3 +1,5 @@
+[![MaraDB Tests](https://github.com/spinualexandru/mara-db/actions/workflows/tests.yml/badge.svg)](https://github.com/spinualexandru/mara-db/actions/workflows/tests.yml) |
+
 # MaraDB
 
 MaraDB is a lightweight document database for Lua with JSON persistence. It provides an easy-to-use interface for
