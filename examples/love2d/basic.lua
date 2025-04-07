@@ -47,5 +47,6 @@ end
 
 function love.quit()
     -- Save game data before closing
+    print("Saving game data...")
     db:close()
 end

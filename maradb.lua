@@ -1,5 +1,10 @@
 local maradb = {}
 
+-- Detect runtime environment
+maradb.runtime = {
+    is_love = (love ~= nil and love.filesystem ~= nil)
+}
+
 function maradb:decode_json_string(str)
     local pos = 1
 
@@ -182,24 +187,44 @@ function maradb:encode_json(data)
     return maradb:encode_value(data)
 end
 
+
+
+-- File system operations based on runtime
 function maradb:read_file(filename)
-    local file = io.open(filename, "r")
-    if not file then
+    if self.runtime.is_love then
+        -- LÖVE2D file reading
+        if love.filesystem.getInfo(filename) then
+            return love.filesystem.read(filename)
+        end
         return nil
+    else
+        -- Vanilla Lua file reading
+        local file = io.open(filename, "r")
+        if not file then
+            return nil
+        end
+        local content = file:read("*a")
+        file:close()
+        return content
     end
-    local content = file:read("*a")
-    file:close()
-    return content
 end
 
 function maradb:write_file(filename, content)
-    local file = io.open(filename, "w")
-    if not file then
-        return false
+    if self.runtime.is_love then
+        -- LÖVE2D file writing
+        local success, message = love.filesystem.write(filename, content)
+
+        return success ~= nil
+    else
+        -- Vanilla Lua file writing
+        local file = io.open(filename, "w")
+        if not file then
+            return false
+        end
+        file:write(content)
+        file:close()
+        return true
     end
-    file:write(content)
-    file:close()
-    return true
 end
 
 function maradb.open(db_name)
@@ -491,4 +516,5 @@ function maradb:collection(collection_name, db)
 
     return collection
 end
+
 return maradb
