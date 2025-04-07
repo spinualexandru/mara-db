@@ -3,6 +3,30 @@
 MaraDB is a lightweight document database for Lua with JSON persistence. It provides an easy-to-use interface for
 storing, retrieving, and manipulating structured data.
 
+## Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Basic Usage](#basic-usage)
+    - [Opening a Database](#opening-a-database)
+    - [Working with Collections](#working-with-collections)
+- [CRUD Operations](#crud-operations)
+    - [Insert](#insert)
+    - [Query](#query)
+    - [Update](#update)
+    - [Upsert](#upsert-update-or-insert)
+    - [Delete](#delete)
+- [Indexing](#indexing)
+- [Working with Nested Data](#working-with-nested-data)
+- [Complete Example](#complete-example)
+- [Love2D Examples](examples/love2d)
+    - [Basic Usage in Love2D](examples/love2d/basic.lua)
+    - [Game Inventory System](examples/love2d/game_inventory.lua)
+    - [Player Save System](examples/love2d/save_system.lua)
+    - [High Score System](examples/love2d/high_score.lua)
+    - [Dialog and Quest System](examples/love2d/quest_dialog.lua)
+- [License](#license)
+
 ## Features
 
 - Document-oriented storage
