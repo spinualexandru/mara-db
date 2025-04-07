@@ -1,4 +1,4 @@
-[![MaraDB Tests](https://github.com/spinualexandru/mara-db/actions/workflows/tests.yml/badge.svg)](https://github.com/spinualexandru/mara-db/actions/workflows/tests.yml) |
+[![MaraDB Tests](https://github.com/spinualexandru/mara-db/actions/workflows/tests.yml/badge.svg)](https://github.com/spinualexandru/mara-db/actions/workflows/tests.yml)
 
 # MaraDB
 
